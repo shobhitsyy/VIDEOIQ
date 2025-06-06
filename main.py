@@ -9,6 +9,11 @@ import shutil
 from extract_transcript import YouTubeTranscriptExtractor
 from summarize_json import TranscriptSummarizer
 from groq_qna import ask_question
+import streamlit as st
+
+groq_key = st.secrets["GROQ_API_KEY"]
+gemini_key = st.secrets["GEMINI_API_KEY"]
+huggingface_key = st.secrets["HUGGINGFACE_API_KEY"]
 
 app = FastAPI()
 
