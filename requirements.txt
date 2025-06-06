@@ -1,0 +1,12 @@
+streamlit
+fastapi
+uvicorn
+python-dotenv
+requests
+beautifulsoup4
+lxml
+openai
+google-generativeai
+groq
+transformers
+torch
