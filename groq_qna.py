@@ -5,7 +5,7 @@ from typing import Optional
 
 # Initialize Groq client
 client = Groq(
-    api_key="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",  # Replace with your Groq API key
+    api_key="groq_key",  # Replace with your Groq API key
 )
 
 def read_transcript(file_path: str) -> str:
