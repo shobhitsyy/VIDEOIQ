@@ -46,8 +46,17 @@ Includes both a backend API and a user-friendly Streamlit interface.
     pip install -r requirements.txt
     ```
 
-4. **(Optional) Set up environment variables**  
-   Create a `.env` file for any API keys required by your summarizer or QnA modules.
+4. **Set up environment variables**  
+   You must create a `.env` file in the project root directory with your API keys.  
+   The following keys are required:
+
+    ```
+    GROQ_API_KEY=your_groq_api_key
+    GEMINI_API_KEY=your_gemini_api_key
+    HUGGINGFACE_API_KEY=your_huggingface_api_key
+    ```
+
+    You can copy the provided `.env.example` file and fill in your API keys.
 
 ---
 
