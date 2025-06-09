@@ -17,55 +17,19 @@ if 'key_points' not in st.session_state:
     st.session_state['key_points'] = []
 if 'qna_history' not in st.session_state:
     st.session_state['qna_history'] = []
-if 'available_languages' not in st.session_state:
-    st.session_state['available_languages'] = []
 
 # --- EXTRACT TRANSCRIPT ---
 st.header("1. Extract Transcript from YouTube")
 youtube_url = st.text_input("YouTube URL", key="youtube_url")
-
-# Create extractor instance
-extractor = YouTubeTranscriptExtractor()
-
-# When URL is entered, fetch available languages
-if youtube_url:
-    video_id = extractor.extract_video_id(youtube_url)
-    if video_id:
-        languages = extractor.get_available_languages(video_id)
-        st.session_state['available_languages'] = languages
-        
-        if languages:
-            # Create language selection dropdown
-            lang_options = [f"{lang['name']} ({lang['type']})" for lang in languages]
-            lang_options.insert(0, "Auto (Try English first)")
-            selected_lang = st.selectbox(
-                "Select transcript language",
-                options=lang_options,
-                index=0
-            )
-            
-            # Get the language code if a specific language was selected
-            selected_lang_code = None
-            if selected_lang != "Auto (Try English first)":
-                selected_idx = lang_options.index(selected_lang) - 1  # -1 for the "Auto" option
-                selected_lang_code = languages[selected_idx]['code']
-        else:
-            st.warning("No transcripts available for this video")
-
 if st.button("Extract Transcript"):
-    if youtube_url:
-        # Get selected language code from above
-        lang_code = selected_lang_code if 'selected_lang_code' in locals() else None
-        
-        success, message, data = extractor.extract_and_save(youtube_url, lang_code)
-        st.write(message)
-        if success:
-            st.session_state.transcript_data = data
-            st.text_area("Transcript", data["transcript_plain"], height=200)
-        else:
-            st.session_state.transcript_data = None
+    extractor = YouTubeTranscriptExtractor()
+    success, message, data = extractor.extract_and_save(youtube_url)
+    st.write(message)
+    if success:
+        st.session_state.transcript_data = data
+        st.text_area("Transcript", data["transcript_plain"], height=200)
     else:
-        st.error("Please enter a YouTube URL")
+        st.session_state.transcript_data = None
 
 # --- DISPLAY TRANSCRIPT IF ALREADY EXTRACTED ---
 if st.session_state.transcript_data:
