@@ -7,24 +7,28 @@ from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 import requests
 from urllib.parse import urlparse, parse_qs
+import xml.etree.ElementTree as ET
+
+# Install required packages:
+# pip install requests beautifulsoup4 lxml
 
 try:
-    from youtube_transcript_api import YouTubeTranscriptApi
-    from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound
+    from bs4 import BeautifulSoup
 except ImportError:
-    print("Please install youtube-transcript-api: pip install youtube-transcript-api")
+    print("Please install beautifulsoup4: pip install beautifulsoup4")
     exit(1)
 
 class YouTubeTranscriptExtractor:
     def __init__(self, storage_dir: str = "transcripts"):
         """
-        Initialize the YouTube Transcript Extractor
+        Initialize the YouTube Transcript Extractor with multiple fallback methods
         
         Args:
             storage_dir: Directory to store extracted transcripts
         """
         self.storage_dir = storage_dir
         self.session = requests.Session()
+        # Add headers to mimic a real browser
         self.session.headers.update({
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
@@ -34,7 +38,7 @@ class YouTubeTranscriptExtractor:
             'Upgrade-Insecure-Requests': '1',
         })
         self.ensure_storage_dir()
-
+    
     def ensure_storage_dir(self):
         """Create storage directory if it doesn't exist"""
         if not os.path.exists(self.storage_dir):
@@ -61,187 +65,345 @@ class YouTubeTranscriptExtractor:
                 return match.group(1)
         
         return None
-
+    
     def get_video_info_from_page(self, video_id: str) -> Dict:
-        """
-        Extract video information from YouTube page
-        
-        Args:
-            video_id: YouTube video ID
-            
-        Returns:
-            Dictionary containing video information
-        """
-        try:
-            url = f"https://www.youtube.com/watch?v={video_id}"
-            time.sleep(random.uniform(1, 3))
-            
-            response = self.session.get(url, timeout=10)
-            response.raise_for_status()
-            
-            soup = BeautifulSoup(response.content, 'html.parser')
-            
-            # Extract title
-            title_tag = soup.find('meta', property='og:title')
-            title = title_tag['content'] if title_tag else 'Unknown Title'
-            
-            # Extract description
-            desc_tag = soup.find('meta', property='og:description')
-            description = desc_tag['content'] if desc_tag else ''
-            
-            # Extract duration
-            duration = 0
-            duration_tag = soup.find('meta', itemprop='duration')
-            if duration_tag:
-                duration_str = duration_tag.get('content', '')
-                if duration_str.startswith('PT'):
-                    duration_str = duration_str[2:]
-                    if 'H' in duration_str:
-                        hours = int(duration_str.split('H')[0])
-                        duration += hours * 3600
-                        duration_str = duration_str.split('H')[1]
-                    if 'M' in duration_str:
-                        minutes = int(duration_str.split('M')[0])
-                        duration += minutes * 60
-                        duration_str = duration_str.split('M')[1]
-                    if 'S' in duration_str:
-                        seconds = int(duration_str.replace('S', ''))
-                        duration += seconds
-            
-            return {
-                'title': title,
-                'description': description,
-                'duration': duration
-            }
-            
-        except Exception as e:
-            print(f"Error getting video info: {str(e)}")
-            return {'title': 'Unknown Title', 'description': '', 'duration': 0}
+      """
+      Extract video information from YouTube page with improved duration extraction
 
-    def get_available_languages(self, video_id: str) -> List[Dict]:
-        """
-        Get list of available transcript languages for a video
-        
-        Args:
-            video_id: YouTube video ID
-            
-        Returns:
-            List of dicts with language info (code and name)
-        """
-        try:
-            transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
-            languages = []
-            
-            # Get manually created transcripts
-            for transcript in transcript_list.manual:
-                languages.append({
-                    'code': transcript.language_code,
-                    'name': transcript.language,
-                    'type': 'manual'
-                })
-            
-            # Get auto-generated transcripts
-            for transcript in transcript_list.generated:
-                languages.append({
-                    'code': transcript.language_code,
-                    'name': transcript.language,
-                    'type': 'generated'
-                })
-            
-            return sorted(languages, key=lambda x: (x['type'] != 'manual', x['name']))
-            
-        except Exception as e:
-            print(f"Error getting available languages: {str(e)}")
-            return []
+      Args:
+          video_id: YouTube video ID
 
-    def select_language(self, video_id: str) -> Optional[str]:
-        """
-        Interactive CLI function to display and select available languages
-        
-        Args:
-            video_id: YouTube video ID
-            
-        Returns:
-            Selected language code or None if no selection made
-        """
-        languages = self.get_available_languages(video_id)
-        
-        if not languages:
-            print("No transcripts available for this video")
-            return None
-        
-        print("\nAvailable languages:")
-        print("-" * 50)
-        print(f"{'#':>3} {'Language':<30} {'Type':<10}")
-        print("-" * 50)
-        
-        for i, lang in enumerate(languages, 1):
-            print(f"{i:>3} {lang['name']:<30} {lang['type']:<10}")
-        
-        while True:
-            try:
-                choice = input("\nSelect language number (or press Enter for English/auto): ").strip()
-                
-                if not choice:  # Default behavior
-                    return None
-                
-                choice = int(choice)
-                if 1 <= choice <= len(languages):
-                    return languages[choice-1]['code']
-                else:
-                    print("Invalid choice. Please try again.")
-            except ValueError:
-                print("Please enter a valid number.")
-            except Exception as e:
-                print(f"Error: {str(e)}")
-                return None
+      Returns:
+          Dictionary containing video information
+      """
+      try:
+          url = f"https://www.youtube.com/watch?v={video_id}"
 
-    def extract_transcript(self, video_id: str, language_code: Optional[str] = None) -> Optional[List[Dict]]:
+          # Add random delay to avoid rate limiting
+          time.sleep(random.uniform(1, 3))
+
+          response = self.session.get(url, timeout=10)
+          response.raise_for_status()
+
+          page_content = response.text
+          soup = BeautifulSoup(response.content, 'html.parser')
+
+          # Extract title
+          title_tag = soup.find('meta', property='og:title')
+          title = title_tag['content'] if title_tag else 'Unknown Title'
+
+          # Extract description
+          desc_tag = soup.find('meta', property='og:description')
+          description = desc_tag['content'] if desc_tag else ''
+
+          # Extract duration using multiple methods
+          duration = 0
+
+          # Method 1: Try to find duration in ytInitialPlayerResponse
+          try:
+              player_response_pattern = r'"lengthSeconds":"(\d+)"'
+              duration_match = re.search(player_response_pattern, page_content)
+              if duration_match:
+                  duration = int(duration_match.group(1))
+          except:
+              pass
+
+          # Method 2: Try to find duration in videoDetails
+          if duration == 0:
+              try:
+                  video_details_pattern = r'"videoDetails".*?"lengthSeconds":"(\d+)"'
+                  duration_match = re.search(video_details_pattern, page_content)
+                  if duration_match:
+                      duration = int(duration_match.group(1))
+              except:
+                  pass
+
+          # Method 3: Try to find duration in microformat
+          if duration == 0:
+              try:
+                  microformat_pattern = r'"microformat".*?"lengthSeconds":"(\d+)"'
+                  duration_match = re.search(microformat_pattern, page_content)
+                  if duration_match:
+                      duration = int(duration_match.group(1))
+              except:
+                  pass
+
+          # Method 4: Try to find duration in meta tag
+          if duration == 0:
+              try:
+                  duration_tag = soup.find('meta', itemprop='duration')
+                  if duration_tag:
+                      duration_str = duration_tag.get('content', '')
+                      # Parse ISO 8601 duration (PT4M33S)
+                      if duration_str.startswith('PT'):
+                          duration_str = duration_str[2:]  # Remove PT
+                          duration = 0
+                          if 'H' in duration_str:
+                              parts = duration_str.split('H')
+                              duration += int(parts[0]) * 3600
+                              duration_str = parts[1]
+                          if 'M' in duration_str:
+                              parts = duration_str.split('M')
+                              duration += int(parts[0]) * 60
+                              duration_str = parts[1]
+                          if 'S' in duration_str:
+                              duration += int(duration_str.replace('S', ''))
+              except:
+                  pass
+
+          # Method 5: Try to find duration in JSON-LD
+          if duration == 0:
+              try:
+                  scripts = soup.find_all('script', type='application/ld+json')
+                  for script in scripts:
+                      try:
+                          data = json.loads(script.string)
+                          if isinstance(data, list):
+                              data = data[0]
+                          if 'duration' in data:
+                              duration_str = data['duration']
+                              # Parse ISO 8601 duration (PT4M33S)
+                              if duration_str.startswith('PT'):
+                                  duration_str = duration_str[2:]  # Remove PT
+                                  duration = 0
+                                  if 'H' in duration_str:
+                                      parts = duration_str.split('H')
+                                      duration += int(parts[0]) * 3600
+                                      duration_str = parts[1]
+                                  if 'M' in duration_str:
+                                      parts = duration_str.split('M')
+                                      duration += int(parts[0]) * 60
+                                      duration_str = parts[1]
+                                  if 'S' in duration_str:
+                                      duration += int(duration_str.replace('S', ''))
+                                  break
+                      except:
+                          continue
+              except:
+                  pass
+
+          # Extract additional metadata
+          try:
+              metadata_pattern = r'{"uploadDate":"([^"]+)","viewCount":"([^"]+)"'
+              metadata_match = re.search(metadata_pattern, page_content)
+              if metadata_match:
+                  upload_date = metadata_match.group(1)
+                  view_count = int(metadata_match.group(2))
+              else:
+                  upload_date = ''
+                  view_count = 0
+          except:
+              upload_date = ''
+              view_count = 0
+
+          # Extract tags and categories
+          tags = []
+          categories = []
+          try:
+              keywords_tag = soup.find('meta', {'name': 'keywords'})
+              if keywords_tag:
+                  tags = [tag.strip() for tag in keywords_tag['content'].split(',')]
+          except:
+              pass
+
+          try:
+              category_tag = soup.find('meta', {'property': 'og:video:tag'})
+              if category_tag:
+                  categories = [category_tag['content']]
+          except:
+              pass
+
+          return {
+              'title': title,
+              'description': description,
+              'duration': duration,  # Duration in seconds
+              'upload_date': upload_date,
+              'view_count': view_count,
+              'tags': tags,
+              'categories': categories
+          }
+
+      except Exception as e:
+          print(f"Error getting video info: {str(e)}")
+          return {'title': 'Unknown Title', 'description': '', 'duration': 0}
+    
+    def extract_transcript_from_page(self, video_id: str) -> Optional[List[Dict]]:
         """
-        Extract transcript using youtube-transcript-api
+        Method 1: Extract transcript by parsing YouTube page for transcript URLs
         
         Args:
             video_id: YouTube video ID
-            language_code: Specific language code to use (optional)
             
         Returns:
             List of transcript segments or None if failed
         """
         try:
-            # If language is specified, try that first
-            if language_code:
-                try:
-                    transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=[language_code])
-                    if transcript:
-                        print(f"Got transcript in specified language: {language_code}")
-                        return transcript
-                except Exception as e:
-                    print(f"Could not get transcript in {language_code}: {str(e)}")
+            url = f"https://www.youtube.com/watch?v={video_id}"
+            print(f"Trying to extract transcript from page: {url}")
             
-            # Try English variants first
-            english_codes = ['en', 'en-US', 'en-GB']
-            for lang in english_codes:
+            # Add random delay
+            time.sleep(random.uniform(1, 3))
+            
+            response = self.session.get(url, timeout=15)
+            response.raise_for_status()
+            
+            # Look for transcript/caption URLs in the page source
+            page_content = response.text
+            
+            # Pattern to find timedtext URLs
+            timedtext_pattern = r'"captionTracks":\s*\[(.*?)\]'
+            match = re.search(timedtext_pattern, page_content)
+            
+            if not match:
+                print("No caption tracks found in page")
+                return None
+            
+            caption_data = match.group(1)
+            
+            # Extract the first available caption URL
+            url_pattern = r'"baseUrl":"([^"]+)"'
+            url_match = re.search(url_pattern, caption_data)
+            
+            if not url_match:
+                print("No caption URL found")
+                return None
+            
+            caption_url = url_match.group(1).replace('\\u0026', '&')
+            
+            print(f"Found caption URL: {caption_url[:100]}...")
+            
+            # Download the caption XML
+            time.sleep(random.uniform(0.5, 1.5))
+            caption_response = self.session.get(caption_url, timeout=10)
+            caption_response.raise_for_status()
+            
+            # Parse XML
+            root = ET.fromstring(caption_response.content)
+            
+            transcript = []
+            for text_element in root.findall('.//text'):
+                start_time = float(text_element.get('start', 0))
+                duration = float(text_element.get('dur', 0))
+                text_content = text_element.text or ''
+                
+                # Clean up HTML entities
+                text_content = text_content.replace('&amp;', '&')
+                text_content = text_content.replace('&lt;', '<')
+                text_content = text_content.replace('&gt;', '>')
+                text_content = text_content.replace('&quot;', '"')
+                text_content = text_content.replace('&#39;', "'")
+                
+                transcript.append({
+                    'start': start_time,
+                    'duration': duration,
+                    'text': text_content.strip()
+                })
+            
+            if transcript:
+                print(f"Successfully extracted {len(transcript)} transcript segments")
+                return transcript
+            else:
+                print("No transcript segments found")
+                return None
+            
+        except Exception as e:
+            print(f"Error extracting transcript from page: {str(e)}")
+            return None
+    
+    def extract_transcript_youtube_api_fallback(self, video_id: str) -> Optional[List[Dict]]:
+        """
+        Method 2: Try the youtube-transcript-api as fallback
+        
+        Args:
+            video_id: YouTube video ID
+            
+        Returns:
+            List of transcript segments or None if failed
+        """
+        try:
+            from youtube_transcript_api import YouTubeTranscriptApi
+            from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound
+            
+            print("Trying youtube-transcript-api...")
+            
+            # Try multiple language codes
+            languages = ['en', 'en-US', 'en-GB', 'auto']
+            
+            for lang in languages:
                 try:
-                    transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=[lang])
+                    if lang == 'auto':
+                        transcript = YouTubeTranscriptApi.get_transcript(video_id)
+                    else:
+                        transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=[lang])
+                    
                     if transcript:
-                        print(f"Got transcript in {lang}")
+                        print(f"Successfully got transcript using youtube-transcript-api (lang: {lang})")
                         return transcript
-                except Exception:
+                        
+                except NoTranscriptFound:
+                    continue
+                except Exception as e:
+                    print(f"Error with language {lang}: {str(e)}")
                     continue
             
-            # If no English transcript, try auto-generated
-            try:
-                transcript = YouTubeTranscriptApi.get_transcript(video_id)
-                if transcript:
-                    print("Got auto-generated transcript")
-                    return transcript
-            except Exception as e:
-                print(f"Could not get auto-generated transcript: {str(e)}")
+            return None
+            
+        except ImportError:
+            print("youtube-transcript-api not available")
+            return None
+        except Exception as e:
+            print(f"Error with youtube-transcript-api: {str(e)}")
+            return None
+    
+    def extract_transcript_direct_api(self, video_id: str) -> Optional[List[Dict]]:
+        """
+        Method 3: Direct API approach using YouTube's internal API
+        
+        Args:
+            video_id: YouTube video ID
+            
+        Returns:
+            List of transcript segments or None if failed
+        """
+        try:
+            print("Trying direct API approach...")
+            
+            # This is a simplified approach - in practice, you might need to
+            # reverse engineer more of YouTube's internal API calls
+            api_url = f"https://www.youtube.com/api/timedtext?v={video_id}&lang=en&fmt=srv3"
+            
+            time.sleep(random.uniform(1, 2))
+            
+            response = self.session.get(api_url, timeout=10)
+            
+            if response.status_code == 200 and response.content:
+                # Try to parse as XML
+                try:
+                    root = ET.fromstring(response.content)
+                    transcript = []
+                    
+                    for p in root.findall('.//p'):
+                        start_time = float(p.get('t', 0)) / 1000  # Convert ms to seconds
+                        text_content = ''.join(p.itertext()).strip()
+                        
+                        if text_content:
+                            transcript.append({
+                                'start': start_time,
+                                'duration': 0,  # Duration not available in this format
+                                'text': text_content
+                            })
+                    
+                    if transcript:
+                        print(f"Successfully extracted {len(transcript)} segments via direct API")
+                        return transcript
+                        
+                except ET.ParseError:
+                    pass
             
             return None
             
         except Exception as e:
-            print(f"Error extracting transcript: {str(e)}")
+            print(f"Error with direct API: {str(e)}")
             return None
     
     def format_transcript(self, transcript: List[Dict]) -> str:
@@ -286,13 +448,12 @@ class YouTubeTranscriptExtractor:
         
         return filepath
     
-    def extract_and_save(self, youtube_url: str, language_code: Optional[str] = None) -> Tuple[bool, str, Dict]:
+    def extract_and_save(self, youtube_url: str) -> Tuple[bool, str, Dict]:
         """
-        Main method to extract and save transcript
+        Main method to extract and save transcript using multiple fallback methods
         
         Args:
             youtube_url: YouTube video URL
-            language_code: Specific language code to use (optional)
             
         Returns:
             Tuple of (success, message, data)
@@ -308,11 +469,29 @@ class YouTubeTranscriptExtractor:
         print("Getting video metadata...")
         metadata = self.get_video_info_from_page(video_id)
         
-        # Extract transcript
-        transcript = self.extract_transcript(video_id, language_code)
+        # Try multiple methods to extract transcript
+        transcript = None
+        methods = [
+            ("Page parsing", self.extract_transcript_from_page),
+            ("YouTube Transcript API", self.extract_transcript_youtube_api_fallback),
+            ("Direct API", self.extract_transcript_direct_api)
+        ]
+        
+        for method_name, method_func in methods:
+            print(f"\nTrying method: {method_name}")
+            try:
+                transcript = method_func(video_id)
+                if transcript and len(transcript) > 0:
+                    print(f"✓ Success with {method_name}")
+                    break
+                else:
+                    print(f"✗ {method_name} returned no results")
+            except Exception as e:
+                print(f"✗ {method_name} failed: {str(e)}")
+                continue
         
         if not transcript:
-            error_msg = "Could not extract transcript. Possible reasons:\n"
+            error_msg = "Could not extract transcript using any method. Possible reasons:\n"
             error_msg += "- Video has no captions/subtitles available\n"
             error_msg += "- Video is private or restricted\n"
             error_msg += "- YouTube has blocked automated access\n"
@@ -369,18 +548,6 @@ def test_with_sample_videos():
         print(f"\nTest {i}: {url}")
         print("-" * 40)
         
-        video_id = extractor.extract_video_id(url)
-        if video_id:
-            # Show available languages
-            print("\nChecking available languages...")
-            languages = extractor.get_available_languages(video_id)
-            if languages:
-                print(f"Found {len(languages)} available languages:")
-                for lang in languages:
-                    print(f"- {lang['name']} ({lang['code']}) [{lang['type']}]")
-            else:
-                print("No transcripts available")
-        
         success, message, data = extractor.extract_and_save(url)
         print(message)
         
@@ -395,9 +562,12 @@ def main():
     """
     Interactive usage of the YouTube Transcript Extractor
     """
-    print("YouTube Transcript Extractor")
+    print("YouTube Transcript Extractor (Multi-Method)")
     print("=" * 50)
-    print("This tool can extract transcripts in multiple languages")
+    print("This tool uses multiple methods to extract transcripts:")
+    print("1. Direct page parsing")
+    print("2. YouTube Transcript API (if available)")
+    print("3. Direct API calls")
     print("=" * 50)
     
     extractor = YouTubeTranscriptExtractor()
@@ -417,17 +587,8 @@ def main():
                 print("Please enter a valid URL")
                 continue
             
-            # Get video ID
-            video_id = extractor.extract_video_id(youtube_url)
-            if not video_id:
-                print("Invalid YouTube URL")
-                continue
-            
-            # Show available languages and get selection
-            language_code = extractor.select_language(video_id)
-            
             print("\nProcessing...")
-            success, message, data = extractor.extract_and_save(youtube_url, language_code)
+            success, message, data = extractor.extract_and_save(youtube_url)
             
             print(f"\n{message}")
             
