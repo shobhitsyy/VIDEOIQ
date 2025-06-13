@@ -1,4 +1,4 @@
-# YouTube Transcript Toolkit
+# VIDEOIQ
 
 A Python-based toolkit for extracting, summarizing, and querying YouTube video transcripts.  
 Includes both a backend API and a user-friendly Streamlit interface.
@@ -31,8 +31,8 @@ Includes both a backend API and a user-friendly Streamlit interface.
 
 1. **Clone the repository**
     ```bash
-    git clone https://github.com/yourusername/yt-transcript-toolkit.git
-    cd yt-transcript-toolkit
+    git clone https://github.com/yourusername/VIDEOIQ.git
+    cd VIDEOIQ
     ```
 
 2. **Create and activate a virtual environment (recommended)**
@@ -53,7 +53,6 @@ Includes both a backend API and a user-friendly Streamlit interface.
     ```
     GROQ_API_KEY=your_groq_api_key
     GEMINI_API_KEY=your_gemini_api_key
-    HUGGINGFACE_API_KEY=your_huggingface_api_key
     ```
 
     You can copy the provided `.env.example` file and fill in your API keys.
@@ -85,7 +84,7 @@ uvicorn main:app --reload
 ## Project Structure
 
 ```
-yt-transcript-toolkit/
+VIDEOIQ/
 │
 ├── extract_transcript.py
 ├── summarize_json.py
