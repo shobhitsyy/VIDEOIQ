@@ -10,3 +10,4 @@ google-generativeai
 groq
 transformers
 torch
+youtube-transcript-api
