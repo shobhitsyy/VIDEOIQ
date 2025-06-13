@@ -1,16 +1,26 @@
+import os
 from groq import Groq
 import google.generativeai as genai
 from typing import Optional
-import time
 
-# Initialize clients
-groq_client = Groq(
-    api_key="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",  # Replace with your Groq API key
-)
+# Read API keys securely from environment variables
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
-# Configure Gemini
-genai.configure(api_key="AIzaSyCwQq8ipQkIJrV9gy_D1xeZSfok_lyJ6t0")  # Replace with your Gemini API key
-gemini_model = genai.GenerativeModel('gemini-1.5-flash')
+# Initialize clients (fail gracefully if keys are missing)
+groq_client = None
+gemini_model = None
+
+if GROQ_API_KEY:
+    groq_client = Groq(api_key=GROQ_API_KEY)  # Do not expose key in source!
+else:
+    print("Warning: GROQ_API_KEY not set in environment.")
+
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
+    gemini_model = genai.GenerativeModel('gemini-1.5-flash')
+else:
+    print("Warning: GEMINI_API_KEY not set in environment.")
 
 def read_transcript(file_path: str) -> str:
     """Read the transcript file content."""
@@ -23,6 +33,9 @@ def read_transcript(file_path: str) -> str:
 
 def ask_groq(transcript: str, question: str) -> Optional[str]:
     """Ask a question using Groq API."""
+    if not groq_client:
+        print("Groq client not initialized. Please set GROQ_API_KEY.")
+        return None
     try:
         prompt = f"""
         Here's a transcript:
@@ -56,6 +69,9 @@ def ask_groq(transcript: str, question: str) -> Optional[str]:
 
 def ask_gemini(transcript: str, question: str) -> Optional[str]:
     """Ask a question using Gemini API as fallback."""
+    if not gemini_model:
+        print("Gemini model not initialized. Please set GEMINI_API_KEY.")
+        return None
     try:
         prompt = f"""
         Here's a transcript:
@@ -87,20 +103,17 @@ def ask_question_with_fallback(transcript: str, question: str) -> Optional[str]:
     """Ask a question with Gemini as primary and Groq as fallback."""
     print("🔄 Trying Gemini API...")
     
-    # Try Gemini first
     answer = ask_gemini(transcript, question)
     if answer:
         print("✅ Response from Gemini")
         return answer
     
-    # If Gemini fails, try Groq
     print("⚠️  Gemini failed, trying Groq API as fallback...")
     answer = ask_groq(transcript, question)
     if answer:
         print("✅ Response from Groq (fallback)")
         return answer
     
-    # If both fail
     print("❌ Both APIs failed")
     return None
 
@@ -108,22 +121,26 @@ def test_apis():
     """Test both APIs to ensure they're working."""
     print("Testing API connections...")
     
-    # Test Gemini first (now primary)
     try:
-        test_response = gemini_model.generate_content("Hello, can you respond with just 'Gemini working'?")
-        print("✅ Gemini API: Connected")
+        if gemini_model:
+            test_response = gemini_model.generate_content("Hello, can you respond with just 'Gemini working'?")
+            print("✅ Gemini API: Connected")
+        else:
+            print("❌ Gemini API: Not initialized")
     except Exception as e:
         print(f"❌ Gemini API: Failed - {e}")
     
-    # Test Groq second (now fallback)
     try:
-        test_response = groq_client.chat.completions.create(
-            messages=[{"role": "user", "content": "Hello, can you respond with just 'Groq working'?"}],
-            model="llama-3.3-70b-versatile",
-            temperature=0.1,
-            max_tokens=10,
-        )
-        print("✅ Groq API: Connected")
+        if groq_client:
+            test_response = groq_client.chat.completions.create(
+                messages=[{"role": "user", "content": "Hello, can you respond with just 'Groq working'?"}],
+                model="llama-3.3-70b-versatile",
+                temperature=0.1,
+                max_tokens=10,
+            )
+            print("✅ Groq API: Connected")
+        else:
+            print("❌ Groq API: Not initialized")
     except Exception as e:
         print(f"❌ Groq API: Failed - {e}")
     
@@ -133,13 +150,10 @@ def main():
     print("=== Transcript Q&A with Dual API Support ===")
     print("Primary: Gemini | Fallback: Groq\n")
     
-    # Test API connections
     test_apis()
     
-    # Get the transcript file path
     file_path = input("Enter the path to your transcript file (txt preferred): ")
 
-    # Read the transcript
     transcript = read_transcript(file_path)
     if not transcript:
         print("Could not read transcript. Please check the file path and try again.")
@@ -155,7 +169,6 @@ def main():
     manual_mode = False
     selected_api = None
 
-    # Question-answering loop
     while True:
         question = input("\n💭 Enter your question: ")
 
@@ -180,16 +193,14 @@ def main():
                 print("❌ Invalid choice. Use 'groq', 'gemini', or 'auto'")
             continue
 
-        # Process the question
         if manual_mode:
             if selected_api == 'gemini':
                 print("🔄 Using Gemini API (manual mode)...")
                 answer = ask_gemini(transcript, question)
-            else:  # groq
+            else:
                 print("🔄 Using Groq API (manual mode)...")
                 answer = ask_groq(transcript, question)
         else:
-            # Use automatic fallback
             answer = ask_question_with_fallback(transcript, question)
 
         if answer:
