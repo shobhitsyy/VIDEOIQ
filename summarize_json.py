@@ -1,14 +1,14 @@
-from dotenv import load_dotenv
-load_dotenv()
 from dataclasses import dataclass
 import os
 import json
 import re
 import time
 from datetime import datetime
-from typing import List, Optional, Tuple, Dict
+from typing import List, Dict, Tuple, Optional
+from collections import Counter
+
 # Install required packages:
-# pip install requests openai google-generativeai anthropic groq transformers torch
+# pip install google-generativeai groq
 
 @dataclass
 class SummaryResult:
@@ -24,7 +24,7 @@ class SummaryResult:
 
 class TranscriptSummarizer:
     """
-    Multi-API transcript summarizer using various free AI services
+    Multi-API transcript summarizer using Groq and Gemini AI services
     """
 
     def __init__(self, storage_dir: str = "summaries"):
@@ -33,11 +33,6 @@ class TranscriptSummarizer:
 
         # API configurations - Add your API keys here
         self.api_configs = {
-            'openai': {
-                'api_key': os.getenv('OPENAI_API_KEY', ''),
-                'model': 'gpt-3.5-turbo',  # Free tier available
-                'max_tokens': 4000
-            },
             'gemini': {
                 'api_key': os.getenv('GEMINI_API_KEY', ''),
                 'model': 'gemini-1.5-flash',  # Free tier
@@ -47,11 +42,6 @@ class TranscriptSummarizer:
                 'api_key': os.getenv('GROQ_API_KEY', ''),
                 'model': 'llama3-8b-8192',  # Free tier
                 'max_tokens': 8000
-            },
-            'huggingface': {
-                'api_key': os.getenv('HUGGINGFACE_API_KEY', ''),
-                'model': 'microsoft/DialoGPT-large',
-                'max_tokens': 2000
             }
         }
 
@@ -127,69 +117,6 @@ class TranscriptSummarizer:
             chunks.append(current_chunk.strip())
 
         return chunks
-
-    def summarize_with_openai(self, text: str, metadata: Dict) -> Optional[SummaryResult]:
-        """Summarize using OpenAI GPT-3.5"""
-        try:
-            import openai
-
-            api_key = self.api_configs['openai']['api_key']
-            if not api_key:
-                print("OpenAI API key not found. Set OPENAI_API_KEY environment variable.")
-                return None
-
-            client = openai.OpenAI(api_key=api_key)
-
-            prompt = f"""
-            Please analyze this YouTube video transcript and provide:
-
-            1. A comprehensive summary (3-4 paragraphs) that captures the main content and flow
-            2. Key takeaways as bullet points (5-8 main points)
-
-            Video Title: {metadata.get('title', 'Unknown')}
-            Duration: {metadata.get('duration_minutes', 0)} minutes
-
-            Transcript:
-            {text[:6000]}  # Limit for free tier
-
-            Format your response as:
-            SUMMARY:
-            [Your summary here]
-
-            KEY POINTS:
-            • [Point 1]
-            • [Point 2]
-            etc.
-            """
-
-            start_time = time.time()
-
-            response = client.chat.completions.create(
-                model=self.api_configs['openai']['model'],
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=1500,
-                temperature=0.7
-            )
-
-            processing_time = time.time() - start_time
-            content = response.choices[0].message.content
-
-            # Parse response
-            summary, key_points = self._parse_ai_response(content)
-
-            return SummaryResult(
-                title=metadata.get('title', 'Unknown'),
-                duration=f"{metadata.get('duration_minutes', 0)} minutes",
-                word_count=metadata.get('word_count', 0),
-                summary=summary,
-                key_points=key_points,
-                ai_provider="OpenAI GPT-3.5",
-                processing_time=processing_time
-            )
-
-        except Exception as e:
-            print(f"OpenAI summarization failed: {str(e)}")
-            return None
 
     def summarize_with_gemini(self, text: str, metadata: Dict) -> Optional[SummaryResult]:
         """Summarize using Google Gemini"""
@@ -304,60 +231,12 @@ class TranscriptSummarizer:
             print(f"Groq summarization failed: {str(e)}")
             return None
 
-    def summarize_with_huggingface(self, text: str, metadata: Dict) -> Optional[SummaryResult]:
-        """Summarize using Hugging Face Transformers (free, runs locally)"""
-        try:
-            from transformers import pipeline
-
-            # Use summarization pipeline
-            summarizer = pipeline("summarization", model="facebook/bart-large-cnn")
-
-            # Chunk text for processing
-            chunks = self.chunk_text(text, 1000)  # BART has token limits
-            chunk_summaries = []
-
-            start_time = time.time()
-
-            for chunk in chunks[:3]:  # Limit to first 3 chunks for speed
-                try:
-                    summary = summarizer(chunk, max_length=150, min_length=50, do_sample=False)
-                    chunk_summaries.append(summary[0]['summary_text'])
-                except Exception as e:
-                    print(f"Error processing chunk: {str(e)}")
-                    continue
-
-            processing_time = time.time() - start_time
-
-            # Combine chunk summaries
-            combined_summary = " ".join(chunk_summaries)
-
-            # Generate key points (simple extraction based on sentences)
-            sentences = re.split(r'[.!?]+', combined_summary)
-            key_points = [s.strip() for s in sentences if len(s.strip()) > 20][:6]
-
-            return SummaryResult(
-                title=metadata.get('title', 'Unknown'),
-                duration=f"{metadata.get('duration_minutes', 0)} minutes",
-                word_count=metadata.get('word_count', 0),
-                summary=combined_summary,
-                key_points=key_points,
-                ai_provider="Hugging Face BART",
-                processing_time=processing_time
-            )
-
-        except Exception as e:
-            print(f"Hugging Face summarization failed: {str(e)}")
-            return None
-
     def summarize_with_local_extractive(self, text: str, metadata: Dict) -> Optional[SummaryResult]:
         """
         Fallback: Simple extractive summarization (no API required)
         Uses sentence ranking based on word frequency
         """
         try:
-            import re
-            from collections import Counter
-
             start_time = time.time()
 
             # Clean and split into sentences
@@ -484,14 +363,12 @@ class TranscriptSummarizer:
 
         # Default provider order
         if not preferred_providers:
-            preferred_providers = ['groq', 'gemini', 'openai', 'huggingface', 'local']
+            preferred_providers = ['gemini', 'groq', 'local']
 
         # Provider methods mapping
         provider_methods = {
-            'openai': self.summarize_with_openai,
             'gemini': self.summarize_with_gemini,
             'groq': self.summarize_with_groq,
-            'huggingface': self.summarize_with_huggingface,
             'local': self.summarize_with_local_extractive
         }
 
@@ -569,25 +446,15 @@ def setup_api_keys():
     """
     print("API Key Setup Instructions:")
     print("=" * 40)
-    print("1. GROQ (Recommended - Fast & Free):")
-    print("   - Visit: https://console.groq.com/")
-    print("   - Sign up and get free API key")
-    print("   - Set: export GROQ_API_KEY='your_key_here'")
-    print()
-    print("2. Google Gemini (Free tier):")
+    print("1. Google Gemini (Free tier):")
     print("   - Visit: https://makersuite.google.com/app/apikey")
     print("   - Get free API key")
     print("   - Set: export GEMINI_API_KEY='your_key_here'")
     print()
-    print("3. OpenAI (Free trial):")
-    print("   - Visit: https://platform.openai.com/api-keys")
-    print("   - Get API key (free trial available)")
-    print("   - Set: export OPENAI_API_KEY='your_key_here'")
-    print()
-    print("4. Hugging Face (Free):")
-    print("   - Visit: https://huggingface.co/settings/tokens")
-    print("   - Create free account and token")
-    print("   - Set: export HUGGINGFACE_API_KEY='your_token_here'")
+    print("2. GROQ (Recommended - Fast & Free):")
+    print("   - Visit: https://console.groq.com/")
+    print("   - Sign up and get free API key")
+    print("   - Set: export GROQ_API_KEY='your_key_here'")
     print()
     print("Note: Local extractive method works without any API keys")
 
@@ -619,16 +486,14 @@ def main():
 
             # Ask for preferred providers
             print("\nAvailable AI providers:")
-            print("1. groq (Recommended - fast & free)")
-            print("2. gemini (Google - free tier)")
-            print("3. openai (ChatGPT - free trial)")
-            print("4. huggingface (Free, runs locally)")
-            print("5. local (No API needed, basic)")
+            print("1. gemini (Google - free tier)")
+            print("2. groq (Recommended - fast & free)")
+            print("3. local (No API needed, basic)")
 
             provider_choice = input("Enter preferred provider numbers (e.g., 1,2,3) or press Enter for default: ").strip()
 
             if provider_choice:
-                provider_map = {'1': 'groq', '2': 'gemini', '3': 'openai', '4': 'huggingface', '5': 'local'}
+                provider_map = {'1': 'gemini', '2': 'groq', '3': 'local'}
                 providers = [provider_map.get(p.strip(), 'local') for p in provider_choice.split(',')]
             else:
                 providers = None
