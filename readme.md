@@ -3,6 +3,12 @@
 A Python-based toolkit for extracting, summarizing, and querying YouTube video transcripts.  
 Includes both a backend API and a user-friendly Streamlit interface.
 
+<p align="center">
+  <a href="https://www.youtube.com/watch?v=b2CpCJYBX1I">
+    <img src="https://img.youtube.com/vi/b2CpCJYBX1I/0.jpg" alt="Project Demo">
+  </a>
+</p>
+
 ---
 
 ## Features
@@ -21,9 +27,9 @@ Includes both a backend API and a user-friendly Streamlit interface.
 ## Technology Stack
 
 - **Python 3.8+**
-- Streamlit - Interactive UI for the toolkit.
+- Streamlit - Interactive UI for the toolkit
 - FastAPI *(optional, for backend API endpoints)*
-- Custom modules for extraction, summarization, and Q&A.
+- Custom modules for extraction, summarization, and Q&A
 
 ---
 
@@ -31,7 +37,7 @@ Includes both a backend API and a user-friendly Streamlit interface.
 
 1. **Clone the repository**
     ```bash
-    git clone https://github.com/yourusername/VIDEOIQ.git
+    git clone https://github.com/shobhitsy/VIDEOIQ.git
     cd VIDEOIQ
     ```
 
@@ -47,34 +53,54 @@ Includes both a backend API and a user-friendly Streamlit interface.
     ```
 
 4. **Set up environment variables**  
-   You must create a `.env` file in the project root directory with your API keys.  
-   The following keys are required:
-
+   Create a `.env` file in the project root directory with your API keys:
     ```
     GROQ_API_KEY=your_groq_api_key
     GEMINI_API_KEY=your_gemini_api_key
     ```
-
-    You can copy the provided `.env.example` file and fill in your API keys.
+   You can copy the provided `.env.example` file and fill in your API keys.
 
 ---
 
 ## Usage
 
-### 1. Run the Streamlit App
+### Local Development
 
-This is the easiest way to use all features in one place.
+1. **Run the Streamlit App (Recommended)**
+   ```bash
+   streamlit run streamlit_app.py
+   ```
+   Visit [http://localhost:8501](http://localhost:8501) in your browser.
 
-```bash
-streamlit run streamlit_app.py
-```
+2. **Using ngrok for Remote Access (Optional)**
+   If you want to make your local instance accessible remotely:
+   
+   a. Install ngrok:
+   ```bash
+   # On Windows (using chocolatey):
+   choco install ngrok
+   
+   # On macOS (using homebrew):
+   brew install ngrok
+   ```
+   
+   b. Run Streamlit:
+   ```bash
+   streamlit run streamlit_app.py
+   ```
+   
+   c. In a new terminal, create an ngrok tunnel:
+   ```bash
+   ngrok http 8501
+   ```
+   
+   This will provide you with a public URL that can temporarily access your local instance.
+   
+   Note: The ngrok URL changes each time you restart ngrok, and requires your local machine to be running the application.
 
-Visit [http://localhost:8501](http://localhost:8501) in your browser.
+### API Backend (Optional)
 
-### 2. Run Backend API (Optional)
-
-If you want to use the backend as an API (for custom frontends):
-
+If you want to use the backend as an API:
 ```bash
 uvicorn main:app --reload
 ```
@@ -99,6 +125,14 @@ VIDEOIQ/
 
 ---
 
+## Demo
+
+Check out the [project demo video](https://www.youtube.com/watch?v=b2CpCJYBX1I) to see VIDEOIQ in action!
+
+Note: The demo uses ngrok for temporary remote access. When you run the project locally, you'll access it through localhost or your own ngrok tunnel.
+
+---
+
 ## Contributing
 
 Pull requests are welcome!  
@@ -116,7 +150,6 @@ This project is licensed under the MIT License.
 
 - Streamlit
 - FastAPI
-- OpenAI
 - Groq
 - Google Gemini
 - And all open-source contributors!
